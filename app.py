@@ -143,9 +143,12 @@ def solve_astar(maze, size):
 
 # --- API ROUTES ---
 
+from flask import render_template
+
 @app.route('/')
 def home():
-    return "<h1>Maze Solver API</h1><p>Endpoints:<br>/api/generate_maze<br>/api/solve_maze</p>"
+    return render_template('index.html')
+
 
 
 @app.route('/api/generate_maze', methods=['GET'])
