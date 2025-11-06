@@ -7,11 +7,11 @@
 import json
 import time
 import random
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
 # Initialize Flask application
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)  # Enable CORS for frontend connections
 
 # Constants
@@ -141,14 +141,11 @@ def solve_astar(maze, size):
     return explored, [], 0, visited_steps
 
 
-# --- API ROUTES ---
-
-from flask import render_template
+# --- ROUTES ---
 
 @app.route('/')
 def home():
     return render_template('index.html')
-
 
 
 @app.route('/api/generate_maze', methods=['GET'])
@@ -194,5 +191,7 @@ def solve_maze_api():
         return jsonify({'error': str(e)}), 500
 
 
+# --- DEPLOYMENT ENTRY POINT ---
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # For local testing
+    app.run(host='0.0.0.0', port=5000, debug=True)
