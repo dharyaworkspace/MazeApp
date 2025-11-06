@@ -1,199 +1,177 @@
-# --- Python Backend using Flask ---
-# To run locally:
-# 1. pip install Flask flask-cors
-# 2. python app.py
-# The server runs on http://127.0.0.1:5000/
+# app.py
+"""
+Maze Visualizer backend (Flask) - Render deployment ready
+"""
 
-import json
-import time
-import random
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
+import random
+import time
+import os
 
-# Initialize Flask application
-app = Flask(__name__, static_folder='static', template_folder='templates')
-CORS(app)  # Enable CORS for frontend connections
+app = Flask(__name__, template_folder="templates", static_folder="static")
+CORS(app)
 
-# Constants
+# --- Cell codes --- #
 WALL = 1
 PATH = 0
 START = 2
 END = 3
 
-# --- MAZE GENERATION LOGIC (Recursive Backtracking) ---
-def generate_maze_logic(size):
-    """Generates a maze using the Recursive Backtracking algorithm."""
-    new_maze = [[WALL] * size for _ in range(size)]
-    stack = []
-    start_x, start_y = 1, 1
-    
-    new_maze[start_y][start_x] = PATH
-    stack.append((start_x, start_y))
-    directions = [(0, -2), (2, 0), (0, 2), (-2, 0)]
+
+# --- Maze Generation --- #
+def generate_perfect_maze(size):
+    if size % 2 == 0:
+        size += 1
+    maze = [[WALL for _ in range(size)] for _ in range(size)]
+
+    def neighbors(cx, cy):
+        dirs = [(0, -2), (2, 0), (0, 2), (-2, 0)]
+        random.shuffle(dirs)
+        for dx, dy in dirs:
+            nx, ny = cx + dx, cy + dy
+            if 0 < nx < size - 1 and 0 < ny < size - 1:
+                yield nx, ny, dx // 2, dy // 2
+
+    stack = [(1, 1)]
+    maze[1][1] = PATH
 
     while stack:
         x, y = stack[-1]
-        neighbors = []
-
-        for dx, dy in directions:
-            nx, ny = x + dx, y + dy
-            if 0 < nx < size - 1 and 0 < ny < size - 1 and new_maze[ny][nx] == WALL:
-                neighbors.append((nx, ny, x + dx // 2, y + dy // 2))
-
-        if neighbors:
-            nx, ny, wx, wy = random.choice(neighbors)
-            new_maze[wy][wx] = PATH
-            new_maze[ny][nx] = PATH
-            stack.append((nx, ny))
-        else:
+        found = False
+        for nx, ny, wx_off, wy_off in neighbors(x, y):
+            if maze[ny][nx] == WALL:
+                maze[y + wy_off][x + wx_off] = PATH
+                maze[ny][nx] = PATH
+                stack.append((nx, ny))
+                found = True
+                break
+        if not found:
             stack.pop()
 
-    new_maze[1][1] = START
-    new_maze[size - 2][size - 2] = END
-    return new_maze
+    maze[1][1] = START
+    maze[size - 2][size - 2] = END
+    return maze
 
 
-# --- SOLVERS ---
-
-def solve_dfs(maze, size):
-    start_time = time.time()
-    stack = [(1, 1, [(1, 1)])]
-    visited = set(['1,1'])
-    explored = 0
-    visited_steps = []
-
-    while stack:
-        x, y, path = stack.pop()
-        explored += 1
-        visited_steps.append((x, y))
-
-        if maze[y][x] == END:
-            return explored, path, int((time.time() - start_time) * 1000), visited_steps
-
-        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            nx, ny = x + dx, y + dy
-            key = f"{nx},{ny}"
-            if 0 <= nx < size and 0 <= ny < size and maze[ny][nx] != WALL and key not in visited:
-                visited.add(key)
-                stack.append((nx, ny, path + [(nx, ny)]))
-
-    return explored, [], 0, visited_steps
-
-
-def solve_bfs(maze, size):
-    start_time = time.time()
-    queue = [(1, 1, [(1, 1)])]
-    visited = set(['1,1'])
-    explored = 0
-    visited_steps = []
-
-    while queue:
-        x, y, path = queue.pop(0)
-        explored += 1
-        visited_steps.append((x, y))
-
-        if maze[y][x] == END:
-            return explored, path, int((time.time() - start_time) * 1000), visited_steps
-
-        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            nx, ny = x + dx, y + dy
-            key = f"{nx},{ny}"
-            if 0 <= nx < size and 0 <= ny < size and maze[ny][nx] != WALL and key not in visited:
-                visited.add(key)
-                queue.append((nx, ny, path + [(nx, ny)]))
-
-    return explored, [], 0, visited_steps
-
-
-def solve_astar(maze, size):
-    start_time = time.time()
-    end_x, end_y = size - 2, size - 2
-
-    def heuristic(x, y):
-        return abs(x - end_x) + abs(y - end_y)
-
-    open_set = [(heuristic(1, 1), 1, 1, 0, [(1, 1)])]
-    g_costs = {'1,1': 0}
+# --- Solvers --- #
+def solve_bfs(maze):
+    from collections import deque
+    size = len(maze)
+    start = (1, 1)
+    target = (size - 2, size - 2)
+    q = deque([start])
+    came_from = {start: None}
     visited_steps = []
     explored = 0
 
-    while open_set:
-        open_set.sort(key=lambda item: item[0])
-        f, x, y, g, path = open_set.pop(0)
+    while q:
+        cur = q.popleft()
         explored += 1
-        visited_steps.append((x, y))
-
-        if maze[y][x] == END:
-            return explored, path, int((time.time() - start_time) * 1000), visited_steps
-
+        visited_steps.append([cur[0], cur[1]])
+        if cur == target:
+            break
+        x, y = cur
         for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
             nx, ny = x + dx, y + dy
-            key = f"{nx},{ny}"
-
             if 0 <= nx < size and 0 <= ny < size and maze[ny][nx] != WALL:
-                new_g = g + 1
-                if key not in g_costs or new_g < g_costs[key]:
-                    g_costs[key] = new_g
-                    new_f = new_g + heuristic(nx, ny)
-                    open_set = [item for item in open_set if item[1] != nx or item[2] != ny]
-                    open_set.append((new_f, nx, ny, new_g, path + [(nx, ny)]))
+                if (nx, ny) not in came_from:
+                    came_from[(nx, ny)] = cur
+                    q.append((nx, ny))
 
-    return explored, [], 0, visited_steps
+    path = []
+    cur = target
+    if cur in came_from:
+        while cur:
+            path.append([cur[0], cur[1]])
+            cur = came_from[cur]
+        path.reverse()
+    return explored, path, visited_steps
 
 
-# --- ROUTES ---
+def solve_dfs(maze):
+    size = len(maze)
+    start = (1, 1)
+    target = (size - 2, size - 2)
+    visited = set()
+    visited_steps = []
+    path = []
+    explored = 0
+    found = False
 
-@app.route('/api/generate_maze', methods=['GET', 'POST'])
-def generate_maze_api():
-    try:
-        if request.method == 'POST':
-            data = request.get_json()
-            size = int(data.get('size', 15))
-        else:
-            size = int(request.args.get('size', 15))
+    def in_bounds(x, y):
+        return 0 <= x < size and 0 <= y < size
 
-        size = max(11, min(101, size))
-        if size % 2 == 0:
-            size += 1
+    def dfs(x, y):
+        nonlocal explored, found
+        if found:
+            return
+        if not in_bounds(x, y) or maze[y][x] == WALL or (x, y) in visited:
+            return
+        visited.add((x, y))
+        explored += 1
+        visited_steps.append([x, y])
+        if (x, y) == target:
+            path.append([x, y])
+            found = True
+            return
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            nx, ny = x + dx, y + dy
+            dfs(nx, ny)
+            if found:
+                path.append([x, y])
+                return
 
-        maze = generate_maze_logic(size)
-        return jsonify({'maze': maze, 'size': size})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    dfs(start[0], start[1])
+    path.reverse()
+    return explored, path, visited_steps
 
+
+# --- Routes --- #
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/api/generate_maze', methods=['POST'])
+def api_generate_maze():
+    payload = request.get_json() or {}
+    size = int(payload.get('size', 21))
+    size = max(9, min(size, 101))
+    maze = generate_perfect_maze(size)
+    return jsonify({'maze': maze, 'size': size})
 
 
 @app.route('/api/solve_maze', methods=['POST'])
-def solve_maze_api():
-    try:
-        data = request.get_json()
-        maze = data.get('maze')
-        size = data.get('size')
-        algorithm = data.get('algorithm')
+def api_solve_maze():
+    payload = request.get_json() or {}
+    maze = payload.get('maze')
+    algorithm = (payload.get('algorithm') or 'bfs').lower()
+    if not maze:
+        return jsonify({'error': 'maze data required'}), 400
 
-        if not maze or not size or not algorithm:
-            return jsonify({'error': 'Missing maze data, size, or algorithm.'}), 400
+    start_time = time.time()
+    if algorithm == 'dfs':
+        explored, path, visited_steps = solve_dfs(maze)
+    else:
+        explored, path, visited_steps = solve_bfs(maze)
+    time_ms = int((time.time() - start_time) * 1000)
 
-        if algorithm == 'dfs':
-            explored, path, time_ms, visited_steps = solve_dfs(maze, size)
-        elif algorithm == 'bfs':
-            explored, path, time_ms, visited_steps = solve_bfs(maze, size)
-        elif algorithm == 'astar':
-            explored, path, time_ms, visited_steps = solve_astar(maze, size)
-        else:
-            return jsonify({'error': 'Invalid algorithm specified.'}), 400
-
-        return jsonify({
-            'explored': explored,
-            'path': path,
-            'time': time_ms,
-            'visited_steps': visited_steps
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify({
+        'explored': explored,
+        'path': path,
+        'time': time_ms,
+        'visited_steps': visited_steps
+    })
 
 
-# --- DEPLOYMENT ENTRY POINT ---
+# --- Static fallback (Render-friendly) --- #
+@app.route('/<path:filename>')
+def static_files(filename):
+    """Serve static files like JS/CSS directly"""
+    return send_from_directory(app.static_folder, filename)
+
+
 if __name__ == '__main__':
-    # For local testing
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
