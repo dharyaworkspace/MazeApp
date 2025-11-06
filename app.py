@@ -143,22 +143,24 @@ def solve_astar(maze, size):
 
 # --- ROUTES ---
 
-@app.route('/')
-def home():
-    return render_template('index.html')
-
-
-@app.route('/api/generate_maze', methods=['GET'])
+@app.route('/api/generate_maze', methods=['GET', 'POST'])
 def generate_maze_api():
     try:
-        size = int(request.args.get('size', 15))
-        size = max(11, min(31, size))
+        if request.method == 'POST':
+            data = request.get_json()
+            size = int(data.get('size', 15))
+        else:
+            size = int(request.args.get('size', 15))
+
+        size = max(11, min(101, size))
         if size % 2 == 0:
             size += 1
+
         maze = generate_maze_logic(size)
         return jsonify({'maze': maze, 'size': size})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 
 @app.route('/api/solve_maze', methods=['POST'])
